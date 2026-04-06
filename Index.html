@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Smart Traffic System</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { font-family: Arial; text-align:center; background:#f0f2f5; }
+canvas { border:2px solid black; margin-top:20px; }
+button { padding:10px; margin:5px; cursor:pointer; }
+</style>
+</head>
+
+<body>
+
+<h1>🚦 Smart Adaptive Traffic System</h1>
+
+<button onclick="setEmergency('TOP')">🚑 TOP</button>
+<button onclick="setEmergency('BOTTOM')">🚑 BOTTOM</button>
+<button onclick="setEmergency('LEFT')">🚑 LEFT</button>
+<button onclick="setEmergency('RIGHT')">🚑 RIGHT</button>
+
+<br>
+
+<canvas id="sim" width="600" height="600"></canvas>
+
+<h3>Traffic Stats</h3>
+<canvas id="chart" width="400" height="200"></canvas>
+
+<script>
+const ctx = document.getElementById("sim").getContext("2d");
+
+let lanes = ["TOP","BOTTOM","LEFT","RIGHT"];
+let vehicles = {TOP:[],BOTTOM:[],LEFT:[],RIGHT:[]};
+let currentGreen = "TOP";
+let emergencyLane = null;
+let timer = 0;
+
+// Chart setup
+const chart = new Chart(document.getElementById("chart"), {
+    type: 'bar',
+    data: {
+        labels: lanes,
+        datasets: [{
+            label: 'Vehicles',
+            data: [0,0,0,0]
+        }]
+    }
+});
+
+class Vehicle {
+    constructor(lane){
+        this.lane = lane;
+        this.size = 8;
+
+        if(lane=="TOP"){this.x=290;this.y=0;}
+        if(lane=="BOTTOM"){this.x=310;this.y=600;}
+        if(lane=="LEFT"){this.x=0;this.y=310;}
+        if(lane=="RIGHT"){this.x=600;this.y=290;}
+    }
+
+    move(){
+        if(this.lane===currentGreen){
+            if(this.lane=="TOP") this.y+=2;
+            if(this.lane=="BOTTOM") this.y-=2;
+            if(this.lane=="LEFT") this.x+=2;
+            if(this.lane=="RIGHT") this.x-=2;
+        }
+    }
+
+    draw(){
+        ctx.fillStyle="blue";
+        ctx.fillRect(this.x,this.y,this.size,this.size);
+    }
+}
+
+function spawn(){
+    if(Math.random()>0.7){
+        let lane=lanes[Math.floor(Math.random()*4)];
+        vehicles[lane].push(new Vehicle(lane));
+    }
+}
+
+function setEmergency(lane){
+    emergencyLane = lane;
+}
+
+async function updateSignal(){
+    let data = {
+        TOP: vehicles.TOP.length,
+        BOTTOM: vehicles.BOTTOM.length,
+        LEFT: vehicles.LEFT.length,
+        RIGHT: vehicles.RIGHT.length
+    };
+
+    let res = await fetch("/optimize",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+            vehicles:data,
+            emergency: emergencyLane
+        })
+    });
+
+    let result = await res.json();
+    currentGreen = result.green_lane;
+
+    emergencyLane = null;
+}
+
+function updateChart(){
+    chart.data.datasets[0].data = [
+        vehicles.TOP.length,
+        vehicles.BOTTOM.length,
+        vehicles.LEFT.length,
+        vehicles.RIGHT.length
+    ];
+    chart.update();
+}
+
+function draw(){
+    ctx.clearRect(0,0,600,600);
+
+    // roads
+    ctx.fillStyle="#ccc";
+    ctx.fillRect(250,0,100,600);
+    ctx.fillRect(0,250,600,100);
+
+    // signals
+    lanes.forEach(l=>{
+        ctx.fillStyle = l===currentGreen?"green":"red";
+
+        if(l=="TOP") ctx.fillRect(290,220,20,20);
+        if(l=="BOTTOM") ctx.fillRect(290,360,20,20);
+        if(l=="LEFT") ctx.fillRect(220,290,20,20);
+        if(l=="RIGHT") ctx.fillRect(360,290,20,20);
+    });
+
+    spawn();
+
+    if(timer>100){
+        updateSignal();
+        timer=0;
+    }
+
+    lanes.forEach(l=>{
+        vehicles[l].forEach(v=>{
+            v.move();
+            v.draw();
+        });
+
+        vehicles[l] = vehicles[l].filter(v =>
+            v.x>0 && v.x<600 && v.y>0 && v.y<600
+        );
+    });
+
+    updateChart();
+
+    timer++;
+    requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+
+</body>
+</html>
